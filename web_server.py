@@ -192,7 +192,7 @@ if __name__ == "__main__":
                 "<h1>Selamat Web Server Anda Berhasil!</h1>"
                 "<h2>Kelompok Tugas Besar Jaringan Komputer</h2>"
                 "<ul>"
-                "<li>Ahmad Refi - 103012300233</li>"
+                "<li>Ahmad Refi Widi Katibin- 103012300231</li>"
                 "<li>Azzahra Indah - 103012300238</li>"
                 "</ul>"
                 "</body></html>"
