@@ -5,13 +5,16 @@ import logging
 import time
 
 HOST = "0.0.0.0"
-TCP_PORT = 8080       # Proxy TCP -> forward ke Web Server:8000
-UDP_PORT = 9090       # Proxy UDP -> forward ke Web Server:9000
-WEB_SERVER_IP = "10.143.43.36"  # ganti dengan IP Laptop A 
+TCP_PORT = 8080          # proxy untuk HTTP
+UDP_PORT = 9090          # proxy untuk UDP QoS
+
+# IP web server di Laptop A
+# kalau IP Laptop A berubah, ganti nilai ini
+WEB_SERVER_IP = "10.143.43.36"   # atau "127.0.0.1" kalau mau pakai localhost
 WEB_SERVER_HTTP_PORT = 8000
 WEB_SERVER_UDP_PORT = 9000
 
-SOCKET_TIMEOUT = 8  # 5–10 detik sesuai ketentuan
+SOCKET_TIMEOUT = 8
 MAX_CONNECTIONS = 50
 
 logging.basicConfig(
@@ -19,9 +22,9 @@ logging.basicConfig(
     format="%(asctime)s [PROXY] %(levelname)s: %(message)s"
 )
 
-# cache sederhana: key = request line, value = response bytes
 cache = {}
 cache_lock = threading.Lock()
+
 
 def handle_tcp_client(client_sock, client_addr):
     client_sock.settimeout(SOCKET_TIMEOUT)
@@ -42,7 +45,7 @@ def handle_tcp_client(client_sock, client_addr):
         first_line = request.split(b"\r\n", 1)[0].decode(errors="ignore")
         cache_key = first_line
 
-        # --- CEK CACHE (LOCK SEKALI AJA) ---
+        # baca cache tanpa nested lock
         with cache_lock:
             cached_response = cache.get(cache_key)
 
@@ -52,7 +55,6 @@ def handle_tcp_client(client_sock, client_addr):
         else:
             status_cache = "MISS"
             try:
-                # forward ke web server
                 upstream = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 upstream.settimeout(SOCKET_TIMEOUT)
                 upstream.connect((WEB_SERVER_IP, WEB_SERVER_HTTP_PORT))
@@ -66,7 +68,6 @@ def handle_tcp_client(client_sock, client_addr):
                     response += data
                 upstream.close()
 
-                # simpan ke cache (LOCK SEKALI, TERPISAH)
                 with cache_lock:
                     cache[cache_key] = response
 
@@ -101,7 +102,6 @@ def handle_tcp_client(client_sock, client_addr):
         client_sock.close()
 
 
-
 def tcp_proxy_server():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -115,16 +115,12 @@ def tcp_proxy_server():
             t = threading.Thread(
                 target=handle_tcp_client,
                 args=(client_sock, client_addr),
-                daemon=True
+                daemon=True,
             )
             t.start()
 
 
 def udp_proxy_server():
-    """
-    Proxy UDP: hanya meneruskan paket antara Client <-> WebServer,
-    tidak melakukan retransmission.
-    """
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind((HOST, UDP_PORT))
         logging.info(f"[UDP] Proxy listening on {HOST}:{UDP_PORT}")
@@ -134,7 +130,6 @@ def udp_proxy_server():
                 data, client_addr = s.recvfrom(65535)
                 recv_time = time.time()
 
-                # forward ke web server
                 with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as upstream:
                     upstream.settimeout(SOCKET_TIMEOUT)
                     upstream.sendto(data, (WEB_SERVER_IP, WEB_SERVER_UDP_PORT))
@@ -142,12 +137,12 @@ def udp_proxy_server():
                         resp, srv_addr = upstream.recvfrom(65535)
                         send_time = time.time()
                         s.sendto(resp, client_addr)
+                        rtt_ms = (send_time - recv_time) * 1000
                         logging.info(
-                            f"[UDP] {client_addr} -> {srv_addr} bytes={len(data)} "
-                            f"RTT={ (send_time - recv_time)*1000:.2f} ms"
+                            f"[UDP] {client_addr} -> {srv_addr} "
+                            f"bytes={len(data)} RTT={rtt_ms:.2f} ms"
                         )
                     except socket.timeout:
-                        # jika hilang, biarkan saja (supaya packet loss bisa terukur)
                         logging.warning(
                             f"[UDP] Timeout waiting echo from server for {client_addr}"
                         )
@@ -156,10 +151,8 @@ def udp_proxy_server():
 
 
 def main():
-    # jalankan TCP proxy dan UDP proxy secara paralel
     t_udp = threading.Thread(target=udp_proxy_server, daemon=True)
     t_udp.start()
-
     tcp_proxy_server()
 
 

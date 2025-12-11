@@ -12,7 +12,7 @@ HTTP_PORT = 8000
 UDP_PORT = 9000
 WWW_ROOT = "./www"
 WORKER_COUNT = 5
-SOCKET_TIMEOUT = 5  # seconds
+SOCKET_TIMEOUT = 5  # detik
 
 logging.basicConfig(
     level=logging.INFO,
@@ -33,9 +33,8 @@ def build_http_response(status_code=200, body=b"", content_type="text/html"):
         f"Content-Type: {content_type}\r\n",
         f"Content-Length: {len(body)}\r\n",
         "Connection: close\r\n",
-        "\r\n"
+        "\r\n",
     ]
-
     return "".join(headers).encode() + body
 
 
@@ -48,7 +47,6 @@ def handle_http_client(conn, addr):
         if not request:
             return
 
-        # Parse request line: GET /path HTTP/1.1
         first_line = request.split("\r\n")[0]
         parts = first_line.split()
         if len(parts) < 2:
@@ -60,12 +58,12 @@ def handle_http_client(conn, addr):
             path = "/index.html"
 
         file_path = os.path.join(WWW_ROOT, path.lstrip("/"))
-        logging.info(f"Request from {addr[0]}:{addr[1]} -> {method} {path}")
+        logging.info(f"[HTTP] Request from {addr[0]}:{addr[1]} -> {method} {path}")
 
         if os.path.isfile(file_path):
             with open(file_path, "rb") as f:
                 body = f.read()
-            # simple content-type guess
+
             if file_path.endswith(".html"):
                 ctype = "text/html"
             elif file_path.endswith(".jpg") or file_path.endswith(".jpeg"):
@@ -76,34 +74,33 @@ def handle_http_client(conn, addr):
                 ctype = "text/css"
             else:
                 ctype = "application/octet-stream"
+
             resp = build_http_response(200, body, ctype)
         else:
             body = b"<h1>404 Not Found</h1>"
             resp = build_http_response(404, body)
 
         conn.sendall(resp)
-
-        duration = (time.time() - start_time) * 1000
+        duration_ms = (time.time() - start_time) * 1000
         logging.info(
-            f"Sent response to {addr[0]}:{addr[1]} "
-            f"file={path} size={len(resp)} bytes time={duration:.2f} ms"
+            f"[HTTP] Sent response to {addr[0]}:{addr[1]} "
+            f"size={len(resp)} bytes time={duration_ms:.2f} ms"
         )
 
     except socket.timeout:
-        logging.warning(f"Timeout handling client {addr}")
+        logging.warning(f"[HTTP] Timeout handling client {addr}")
     except Exception as e:
-        logging.error(f"Error handling client {addr}: {e}")
+        logging.error(f"[HTTP] Error handling client {addr}: {e}")
     finally:
         conn.close()
 
 
 def http_server_single_thread():
-    """Mode single-thread: setiap request diproses berurutan (no thread pool)."""
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind((HOST, HTTP_PORT))
         s.listen(5)
-        logging.info(f"[HTTP] Single-thread server listening on {HOST}:{HTTP_PORT}")
+        logging.info(f"[HTTP] Single thread server listening on {HOST}:{HTTP_PORT}")
 
         while True:
             conn, addr = s.accept()
@@ -115,16 +112,17 @@ def worker_thread(queue: Queue):
     while True:
         conn, addr = queue.get()
         if conn is None:
+            queue.task_done()
             break
         handle_http_client(conn, addr)
         queue.task_done()
 
 
 def http_server_threaded():
-    """Mode threaded: acceptor thread + worker pool."""
     work_queue = Queue()
     workers = []
-    for i in range(WORKER_COUNT):
+
+    for _ in range(WORKER_COUNT):
         t = threading.Thread(target=worker_thread, args=(work_queue,), daemon=True)
         t.start()
         workers.append(t)
@@ -144,44 +142,40 @@ def http_server_threaded():
                 logging.info(f"[HTTP] Connection from {addr}")
                 work_queue.put((conn, addr))
         except KeyboardInterrupt:
-            logging.info("Shutting down HTTP server...")
+            logging.info("[HTTP] Shutting down server")
         finally:
-            # stop workers
             for _ in workers:
                 work_queue.put((None, None))
             work_queue.join()
 
 
 def udp_echo_server():
-    """UDP echo server untuk uji latency, jitter, packet loss."""
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
         s.bind((HOST, UDP_PORT))
         logging.info(f"[UDP] Echo server listening on {HOST}:{UDP_PORT}")
         while True:
             try:
                 data, addr = s.recvfrom(65535)
-                # log singkat
-                logging.info(f"[UDP] Received {len(data)} bytes from {addr}, echoing back")
+                logging.info(f"[UDP] Received {len(data)} bytes from {addr}, echo back")
                 s.sendto(data, addr)
             except Exception as e:
                 logging.error(f"[UDP] Error: {e}")
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Simple Web Server + UDP Echo")
+    parser = argparse.ArgumentParser(description="Simple Web Server plus UDP Echo")
     parser.add_argument(
         "--mode",
         choices=["single", "threaded"],
         default="threaded",
-        help="Mode HTTP server (single / threaded)"
+        help="HTTP server mode: single or threaded",
     )
     args = parser.parse_args()
 
-    # Start UDP server thread
+    # start UDP server in background thread
     t_udp = threading.Thread(target=udp_echo_server, daemon=True)
     t_udp.start()
 
-    # Start HTTP server
     if args.mode == "single":
         http_server_single_thread()
     else:
@@ -190,9 +184,17 @@ def main():
 
 if __name__ == "__main__":
     os.makedirs(WWW_ROOT, exist_ok=True)
-    # buat index.html default jika belum ada
     index_path = os.path.join(WWW_ROOT, "index.html")
     if not os.path.isfile(index_path):
         with open(index_path, "w", encoding="utf-8") as f:
-            f.write("<html><body><h1>Selamat Web Server Anda Berhasil!</h1></body></html>")
+            f.write(
+                "<html><body>"
+                "<h1>Selamat Web Server Anda Berhasil!</h1>"
+                "<h2>Kelompok Tugas Besar Jaringan Komputer</h2>"
+                "<ul>"
+                "<li>Ahmad Refi - 103012300233</li>"
+                "<li>Azzahra Indah - 103012300238</li>"
+                "</ul>"
+                "</body></html>"
+            )
     main()
