@@ -10,7 +10,7 @@ UDP_PORT = 9090          # proxy untuk UDP QoS
 
 # IP web server di Laptop A
 # kalau IP Laptop A berubah, ganti nilai ini
-WEB_SERVER_IP = "192.168.1.11"   # atau "127.0.0.1" kalau mau pakai localhost
+WEB_SERVER_IP = "192.168.1.3"   # atau "127.0.0.1" kalau mau pakai localhost
 WEB_SERVER_HTTP_PORT = 8000
 WEB_SERVER_UDP_PORT = 9000
 

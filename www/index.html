@@ -1,1 +1,121 @@
-<html><body><h1>Selamat Web Server Anda Berhasil!</h1><h2>Kelompok Tugas Besar Jaringan Komputer</h2><ul><li>Ahmad Refi - 103012300233</li><li>Azzahra Indah - 103012300238</li></ul></body></html>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Testing Browser - Final Project</title>
+<style>
+    body {
+        margin: 0;
+        height: 100vh;
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        background: radial-gradient(circle at center, #0d0d0d, #000);
+        overflow: hidden;
+        font-family: 'Courier New', monospace;
+    }
+
+    h1 {
+        color: #00ffcc;
+        font-size: 1.8em;
+        text-shadow: 0 0 20px #00ffcc, 0 0 40px #00ccff;
+        white-space: nowrap;
+        overflow: hidden;
+        border-right: 3px solid rgba(255,255,255,0.75);
+        animation: blink 0.75s step-end infinite,
+                   glowPulse 2s ease-in-out infinite alternate;
+    }
+
+    @keyframes blink {
+        from, to { border-color: transparent; }
+        50% { border-color: rgba(255,255,255,0.75); }
+    }
+
+    @keyframes glowPulse {
+        from { text-shadow: 0 0 10px #00ffcc, 0 0 20px #00ccff; color: #00ffcc; }
+        to { text-shadow: 0 0 30px #00ffff, 0 0 60px #00ccff; color: #ffffff; }
+    }
+
+    /* Partikel latar belakang */
+    .particle {
+        position: absolute;
+        border-radius: 50%;
+        background: rgba(0,255,204,0.4);
+        animation: float 10s linear infinite;
+    }
+
+    @keyframes float {
+        0% {
+            transform: translateY(100vh) scale(0);
+            opacity: 0.5;
+        }
+        50% {
+            opacity: 1;
+        }
+        100% {
+            transform: translateY(-10vh) scale(1.5);
+            opacity: 0;
+        }
+    }
+</style>
+</head>
+<body>
+
+    <h1 id="message"></h1>
+
+    <script>
+        const messages = [
+            "TESTING BROWSER FOR FINAL PROJECT COMPUTER NETWORK",
+            "INFORMATICS LAB"
+        ];
+
+        const messageElement = document.getElementById("message");
+        let messageIndex = 0;
+        let charIndex = 0;
+        let isDeleting = false;
+
+        function typeEffect() {
+            const currentMessage = messages[messageIndex];
+            const speed = isDeleting ? 50 : 80; // kecepatan ketik & hapus
+            const pauseBetween = 1000; // jeda antar pesan
+
+            if (!isDeleting && charIndex <= currentMessage.length) {
+                messageElement.textContent = currentMessage.substring(0, charIndex);
+                charIndex++;
+                setTimeout(typeEffect, speed);
+            } else if (isDeleting && charIndex >= 0) {
+                messageElement.textContent = currentMessage.substring(0, charIndex);
+                charIndex--;
+                setTimeout(typeEffect, speed);
+            } else {
+                if (!isDeleting) {
+                    isDeleting = true;
+                    setTimeout(typeEffect, pauseBetween);
+                } else {
+                    isDeleting = false;
+                    messageIndex = (messageIndex + 1) % messages.length;
+                    setTimeout(typeEffect, 500);
+                }
+            }
+        }
+
+        typeEffect();
+
+        // Tambah efek partikel acak
+        const particleCount = 30;
+        for (let i = 0; i < particleCount; i++) {
+            const particle = document.createElement('div');
+            particle.classList.add('particle');
+            const size = Math.random() * 6 + 2;
+            particle.style.width = `${size}px`;
+            particle.style.height = `${size}px`;
+            particle.style.left = `${Math.random() * 100}vw`;
+            particle.style.animationDuration = `${Math.random() * 10 + 5}s`;
+            particle.style.animationDelay = `${Math.random() * 5}s`;
+            document.body.appendChild(particle);
+        }
+    </script>
+
+</body>
+</html>
