@@ -1,4 +1,19 @@
 #!/usr/bin/env python3
+"""
+Tugas Besar Jaringan Komputer
+Client (Laptop B)
+
+Client ini digunakan untuk melakukan pengujian:
+1. HTTP single request
+2. HTTP multi client (parallel)
+3. UDP QoS test (loss, RTT, jitter, throughput)
+4. Browser mode (save HTML dan buka di browser)
+
+Client akan berkomunikasi dengan:
+- Web server langsung (port 8000 / 9000)
+- Proxy server (port 8080 / 9090)
+"""
+
 import socket
 import threading
 import argparse
@@ -8,22 +23,53 @@ import os
 import webbrowser
 import logging
 
+# Konfigurasi logging agar output terminal rapi dan mudah dibaca
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [CLIENT] %(levelname)s: %(message)s"
 )
 
 
-def http_request(host, port, path="/", save_as=None, open_browser=False):
+def http_request(
+    host: str,
+    port: int,
+    path: str = "/",
+    save_as: str | None = None,
+    open_browser: bool = False
+) -> tuple[float, int]:
+    """
+    Fungsi untuk mengirim satu HTTP GET request ke server.
+
+    Parameter:
+    - host        : IP tujuan (Laptop A)
+    - port        : Port tujuan (8000 atau 8080)
+    - path        : Path HTTP (default "/")
+    - save_as     : Nama file HTML jika ingin disimpan
+    - open_browser: Jika True, file HTML akan langsung dibuka di browser
+
+    Return:
+    - durasi request (detik)
+    - ukuran response (byte)
+    """
+
     addr = (host, port)
     logging.info(f"Connecting to {addr} ...")
     start = time.time()
 
+    # Membuat socket TCP
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+        s.settimeout(8.0)
         s.connect(addr)
-        req = f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
+
+        # Request HTTP sederhana
+        req = (
+            f"GET {path} HTTP/1.1\r\n"
+            f"Host: {host}\r\n"
+            f"Connection: close\r\n\r\n"
+        )
         s.sendall(req.encode())
 
+        # Menerima response sampai koneksi ditutup server
         response = b""
         while True:
             data = s.recv(4096)
@@ -31,19 +77,22 @@ def http_request(host, port, path="/", save_as=None, open_browser=False):
                 break
             response += data
 
-    end = time.time()
-    duration = end - start
+    duration = time.time() - start
     logging.info(f"Received {len(response)} bytes in {duration:.4f} s")
 
+    # Memisahkan HTTP header dan body
     try:
-        header, body = response.split(b"\r\n\r\n", 1)
+        _, body = response.split(b"\r\n\r\n", 1)
     except ValueError:
-        header, body = response, b""
+        body = b""
 
+    # Jika diminta save file
     if save_as:
         with open(save_as, "wb") as f:
             f.write(body)
         logging.info(f"HTML body saved to {save_as}")
+
+        # Membuka file HTML di browser lokal
         if open_browser:
             abs_path = os.path.abspath(save_as)
             webbrowser.open(f"file://{abs_path}")
@@ -51,28 +100,66 @@ def http_request(host, port, path="/", save_as=None, open_browser=False):
     return duration, len(response)
 
 
-def http_worker(host, port, path, idx):
+def http_worker(host: str, port: int, path: str, idx: int) -> None:
+    """
+    Worker thread untuk HTTP multi client.
+    Satu worker melakukan satu HTTP request.
+    """
     d, size = http_request(host, port, path)
     logging.info(f"[HTTP-CLIENT-{idx}] done: {size} bytes, {d:.4f} s")
 
 
-def http_multi_client(host, port, path="/", num_clients=5):
-    threads = []
+def http_multi_client(
+    host: str,
+    port: int,
+    path: str = "/",
+    num_clients: int = 5
+) -> None:
+    """
+    Menjalankan beberapa HTTP client secara paralel menggunakan thread.
+    Digunakan untuk menguji kemampuan server dalam menangani banyak koneksi.
+    """
+
+    threads: list[threading.Thread] = []
+
     for i in range(num_clients):
         t = threading.Thread(
             target=http_worker,
             args=(host, port, path, i + 1),
-            daemon=True,
+            daemon=True
         )
         t.start()
         threads.append(t)
 
+    # Menunggu semua thread selesai
     for t in threads:
         t.join()
 
 
-def udp_qos_test(host, port, num_packets=50, packet_size=100,
-                 interval=0.05, csv_file=None):
+def udp_qos_test(
+    host: str,
+    port: int,
+    num_packets: int = 50,
+    packet_size: int = 100,
+    interval: float = 0.05,
+    csv_file: str | None = None
+) -> dict:
+    """
+    Melakukan pengujian QoS menggunakan UDP echo.
+
+    Parameter:
+    - num_packets : jumlah paket UDP yang dikirim
+    - packet_size: ukuran payload UDP (byte)
+    - interval   : jeda antar paket
+    - csv_file   : nama file CSV untuk menyimpan RTT
+
+    Hasil pengujian:
+    - packet loss
+    - average RTT
+    - jitter
+    - throughput
+    """
+
     addr = (host, port)
     logging.info(
         f"Starting UDP QoS test to {addr} "
@@ -80,18 +167,21 @@ def udp_qos_test(host, port, num_packets=50, packet_size=100,
     )
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    sock.settimeout(2.0)
+    sock.settimeout(1.0)
 
-    send_times = {}
-    rtt_list = []
+    send_times: dict[int, float] = {}
+    rtt_results: list[tuple[int, float]] = []
     recv_count = 0
 
     start_test = time.time()
 
     for seq in range(1, num_packets + 1):
+        # Payload berisi sequence number dan timestamp
         payload = f"{seq};{time.time()}".encode()
+
+        # Padding agar ukuran paket konsisten
         if len(payload) < packet_size:
-            payload = payload + b"x" * (packet_size - len(payload))
+            payload += b"x" * (packet_size - len(payload))
 
         send_time = time.time()
         send_times[seq] = send_time
@@ -103,10 +193,11 @@ def udp_qos_test(host, port, num_packets=50, packet_size=100,
             continue
 
         try:
-            sock.settimeout(interval * 2)
+            sock.settimeout(max(1.0, interval * 2))
             data, server_addr = sock.recvfrom(65535)
             recv_time = time.time()
 
+            # Ambil sequence number dari response
             try:
                 resp_text = data.decode(errors="ignore")
                 resp_seq = int(resp_text.split(";", 1)[0])
@@ -115,42 +206,39 @@ def udp_qos_test(host, port, num_packets=50, packet_size=100,
 
             if resp_seq in send_times:
                 rtt = recv_time - send_times[resp_seq]
-                rtt_list.append(rtt)
+                rtt_results.append((resp_seq, rtt))
                 recv_count += 1
                 logging.info(
                     f"Recv echo seq={resp_seq} from {server_addr}, "
                     f"RTT={rtt * 1000:.2f} ms"
                 )
+
         except socket.timeout:
             logging.warning(f"Timeout waiting echo for seq={seq}")
-        except Exception as e:
-            logging.error(f"Error receiving echo for seq={seq}: {e}")
 
+        # Menjaga interval pengiriman paket
         elapsed = time.time() - send_time
         if elapsed < interval:
             time.sleep(interval - elapsed)
 
-    end_test = time.time()
-    total_time = end_test - start_test
+    total_time = time.time() - start_test
     sock.close()
 
     sent_count = num_packets
     lost_count = sent_count - recv_count
     packet_loss = (lost_count / sent_count) * 100.0
 
-    if rtt_list:
-        avg_latency = sum(rtt_list) / len(rtt_list)
-        diffs = [
-            abs(rtt_list[i] - rtt_list[i - 1])
-            for i in range(1, len(rtt_list))
-        ]
+    if rtt_results:
+        rtts = [r for _, r in rtt_results]
+        avg_latency = sum(rtts) / len(rtts)
+        diffs = [abs(rtts[i] - rtts[i - 1]) for i in range(1, len(rtts))]
         jitter = sum(diffs) / len(diffs) if diffs else 0.0
     else:
         avg_latency = 0.0
         jitter = 0.0
 
     total_bytes = recv_count * packet_size
-    throughput_bps = total_bytes * 8 / total_time if total_time > 0 else 0
+    throughput_bps = (total_bytes * 8 / total_time) if total_time > 0 else 0.0
 
     logging.info("===== QoS RESULT =====")
     logging.info(f"Sent packets     : {sent_count}")
@@ -160,12 +248,13 @@ def udp_qos_test(host, port, num_packets=50, packet_size=100,
     logging.info(f"Jitter           : {jitter * 1000:.2f} ms")
     logging.info(f"Throughput       : {throughput_bps:.2f} bps")
 
+    # Simpan RTT ke file CSV jika diminta
     if csv_file:
         with open(csv_file, "w", newline="") as f:
             writer = csv.writer(f)
             writer.writerow(["seq", "rtt_ms"])
-            for i, r in enumerate(rtt_list, start=1):
-                writer.writerow([i, r * 1000])
+            for seq, rtt in rtt_results:
+                writer.writerow([seq, rtt * 1000])
         logging.info(f"RTT detail saved to {csv_file}")
 
     return {
@@ -178,57 +267,51 @@ def udp_qos_test(host, port, num_packets=50, packet_size=100,
     }
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Client for HTTP and UDP QoS test")
+def main() -> None:
+    """
+    Fungsi utama program client.
+    Mengatur parsing argumen dan pemilihan mode pengujian.
+    """
+
+    parser = argparse.ArgumentParser(
+        description="Client HTTP dan UDP untuk pengujian Tubes Jarkom",
+        formatter_class=argparse.RawTextHelpFormatter
+    )
+
     subparsers = parser.add_subparsers(dest="mode", required=True)
 
+    # Mode HTTP single
     p_http = subparsers.add_parser("http", help="Single HTTP request")
     p_http.add_argument("--host", required=True)
     p_http.add_argument("--port", type=int, required=True)
     p_http.add_argument("--path", default="/")
-    p_http.add_argument("--save", help="Save HTML body to file")
-    p_http.add_argument("--browser", action="store_true", help="Open result in browser")
+    p_http.add_argument("--save")
+    p_http.add_argument("--browser", action="store_true")
 
-    p_multi = subparsers.add_parser("http-multi", help="Multiple HTTP clients")
+    # Mode HTTP multi
+    p_multi = subparsers.add_parser("http-multi", help="HTTP multi client")
     p_multi.add_argument("--host", required=True)
     p_multi.add_argument("--port", type=int, required=True)
     p_multi.add_argument("--path", default="/")
-    p_multi.add_argument("--num", type=int, default=5, help="Number of clients")
+    p_multi.add_argument("--num", type=int, default=5)
 
+    # Mode UDP QoS
     p_udp = subparsers.add_parser("udp-test", help="UDP QoS test")
     p_udp.add_argument("--host", required=True)
     p_udp.add_argument("--port", type=int, required=True)
     p_udp.add_argument("--num", type=int, default=50)
     p_udp.add_argument("--size", type=int, default=100)
     p_udp.add_argument("--interval", type=float, default=0.05)
-    p_udp.add_argument("--csv", help="Save RTT data to CSV")
+    p_udp.add_argument("--csv")
 
     args = parser.parse_args()
 
     if args.mode == "http":
-        http_request(
-            host=args.host,
-            port=args.port,
-            path=args.path,
-            save_as=args.save,
-            open_browser=args.browser,
-        )
+        http_request(args.host, args.port, args.path, args.save, args.browser)
     elif args.mode == "http-multi":
-        http_multi_client(
-            host=args.host,
-            port=args.port,
-            path=args.path,
-            num_clients=args.num,
-        )
+        http_multi_client(args.host, args.port, args.path, args.num)
     elif args.mode == "udp-test":
-        udp_qos_test(
-            host=args.host,
-            port=args.port,
-            num_packets=args.num,
-            packet_size=args.size,
-            interval=args.interval,
-            csv_file=args.csv,
-        )
+        udp_qos_test(args.host, args.port, args.num, args.size, args.interval, args.csv)
 
 
 if __name__ == "__main__":
