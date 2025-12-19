@@ -36,7 +36,7 @@ TCP_PORT = 8080          # proxy untuk HTTP
 UDP_PORT = 9090          # proxy untuk UDP QoS
 
 # Default target (web server di Laptop A). Bisa dioverride lewat argumen.
-WEB_SERVER_IP = "192.168.1.3"
+WEB_SERVER_IP = "10.189.19.36"
 WEB_SERVER_HTTP_PORT = 8000
 WEB_SERVER_UDP_PORT = 9000
 

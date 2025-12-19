@@ -18,7 +18,7 @@ logging.basicConfig(
     format="%(asctime)s [CLIENT] %(levelname)s: %(message)s"
 )
 
-DEFAULT_HOST = "10.189.19.36 "
+DEFAULT_HOST = "10.60.231.83"
 HTTP_SERVER_PORT = 8000
 HTTP_PROXY_PORT = 8080
 UDP_SERVER_PORT = 9000
@@ -31,6 +31,7 @@ UDP_PROXY_PORT = 9090
 def http_request(host, port, path="/", save_as=None, open_browser=False):
     start = time.time()
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+
         s.settimeout(8)
         s.connect((host, port))
         req = f"GET {path} HTTP/1.1\r\nHost: {host}\r\nConnection: close\r\n\r\n"
